@@ -489,7 +489,10 @@ body {
   }
 
   .hud-container {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh; /* Dynamic viewport height - accounts for browser chrome */
+    padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 70px);
   }
 
   .hud-subtitle {
@@ -506,30 +509,40 @@ body {
   }
 
   #orb-canvas {
-    width: min(220px, 55vw);
-    height: min(220px, 55vw);
+    width: min(200px, 50vw);
+    height: min(200px, 50vw);
   }
 
   .visualizer-area {
     flex: 0 0 auto;
-    min-height: 180px;
+    min-height: 160px;
   }
 
   .transcript-panel {
     flex: 1;
     max-height: none;
-    min-height: 120px;
+    min-height: 100px;
   }
 
   .hud-footer {
-    padding: 8px 12px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 12px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 10px) + 10px);
     flex-wrap: wrap;
     gap: 8px;
+    z-index: 50;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
   }
 
   .control-btn {
-    padding: 10px 12px;
-    font-size: 0.55rem;
+    padding: 12px 14px;
+    font-size: 0.6rem;
     flex: 1;
     justify-content: center;
     min-width: 0;
