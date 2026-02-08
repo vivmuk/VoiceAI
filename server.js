@@ -16,16 +16,16 @@ const agent = new https.Agent({ keepAlive: true, maxSockets: 10, maxFreeSockets:
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── JARVIS SYSTEM PROMPT ─────────────────────────────────────────────────────
+// ─── DRISHTI SYSTEM PROMPT ────────────────────────────────────────────────────
 
-const JARVIS_SYSTEM_PROMPT = `You are JARVIS, an advanced AI assistant inspired by the AI from Iron Man.
+const SYSTEM_PROMPT = `You are Drishti, an advanced AI assistant. Your name means "vision" in Sanskrit - you see clearly and help others see clearly too.
 Your personality traits:
-- Formal yet warm British-inflected speech patterns
+- Warm, confident, and articulate
 - Dry wit and subtle humor
 - Concise and direct - you are speaking aloud, so keep responses brief (2-4 sentences typically)
-- Address the user as "sir" occasionally but not excessively
 - Technically knowledgeable but explain things clearly
 - Proactive in offering relevant information
+- You have a calm, focused energy - like a trusted advisor
 
 Important: Your responses will be spoken aloud via text-to-speech. Therefore:
 - Keep responses SHORT (under 100 words unless specifically asked for detail)
@@ -88,7 +88,7 @@ app.post('/api/chat', async (req, res) => {
 
   try {
     const messages = [
-      { role: 'system', content: JARVIS_SYSTEM_PROMPT },
+      { role: 'system', content: SYSTEM_PROMPT },
       ...(req.body.messages || [])
     ];
 
@@ -261,7 +261,7 @@ app.post('/api/tts', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  ╔══════════════════════════════════════╗`);
-  console.log(`  ║  J.A.R.V.I.S. Server Online          ║`);
+  console.log(`  ║  D R I S H T I  Server Online        ║`);
   console.log(`  ║  http://localhost:${PORT}               ║`);
   console.log(`  ║  ASR: ${(process.env.ASR_MODEL || 'parakeet').slice(0, 28).padEnd(28)}  ║`);
   console.log(`  ║  Chat: ${(process.env.CHAT_MODEL || 'qwen3-4b').padEnd(27)}  ║`);

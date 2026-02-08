@@ -758,7 +758,7 @@
 
       const prefix = document.createElement('span');
       prefix.className = 'transcript-prefix';
-      prefix.textContent = role === 'user' ? 'YOU >' : 'JARVIS >';
+      prefix.textContent = role === 'user' ? 'YOU >' : 'DRISHTI >';
 
       entry.appendChild(prefix);
       entry.appendChild(document.createTextNode(' ' + text));
@@ -810,7 +810,7 @@
         document.getElementById('state-label').textContent = 'MIC ERROR';
         document.getElementById('state-label').style.color = '#ff3344';
         document.getElementById('mic-status').classList.add('error');
-        TranscriptUI.addEntry('assistant', 'I require microphone access to function, sir. Please grant permission and reload.');
+        TranscriptUI.addEntry('assistant', 'I require microphone access to function. Please grant permission and reload.');
       }
     },
 
@@ -996,7 +996,7 @@
         await audioQueue.waitForCompletion();
       } catch (err) {
         console.error('Pipeline error:', err);
-        TranscriptUI.addEntry('assistant', 'I encountered an error, sir. ' + err.message);
+        TranscriptUI.addEntry('assistant', 'I encountered an error. ' + err.message);
       }
 
       this.currentQueue = null;
