@@ -3,6 +3,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const https = require('https');
+const zlib = require('zlib');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -13,7 +14,12 @@ const API_KEY = process.env.VENICE_API_KEY;
 const agent = new https.Agent({ keepAlive: true, maxSockets: 10, maxFreeSockets: 5 });
 
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  setHeaders(res) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+}));
 
 // ─── DRISHTI SYSTEM PROMPT ────────────────────────────────────────────────────
 
@@ -73,18 +79,37 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 // ─── ROUTE 2: CHAT (Streaming SSE - tokens + sentence boundaries) ────────────
 
 app.post('/api/chat', async (req, res) => {
-  // SSE headers - important for Railway and other proxies
+  // SSE headers
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('Transfer-Encoding', 'chunked');
-  // Disable compression which can cause buffering
-  res.setHeader('Content-Encoding', 'identity');
   res.flushHeaders();
+  // Send an immediate SSE comment so clients/proxies see body bytes right away.
+  res.write(': connected\n\n');
 
   let aborted = false;
-  req.on('close', () => { aborted = true; });
+  let veniceReq = null;
+  const pingInterval = setInterval(() => {
+    if (!aborted && !res.writableEnded) res.write(': ping\n\n');
+  }, 15000);
+
+  function abortStream(reason) {
+    if (aborted) return;
+    aborted = true;
+    clearInterval(pingInterval);
+    console.log(`[Chat] Client disconnected (${reason})`);
+    if (veniceReq && !veniceReq.destroyed) {
+      veniceReq.destroy(new Error('Client disconnected'));
+    }
+  }
+
+  // `req.close` fires once the request body is consumed for POST requests,
+  // so use response/request abort signals instead to detect real disconnects.
+  req.on('aborted', () => abortStream('request aborted'));
+  res.on('close', () => {
+    if (!res.writableEnded) abortStream('response closed early');
+  });
 
   try {
     const messages = [
@@ -111,44 +136,16 @@ app.post('/api/chat', async (req, res) => {
 
     console.log(`[Chat] Model: ${chatModel}, User: "${messages[messages.length - 1]?.content?.slice(0, 50)}..."`);
 
-    let response;
-    try {
-      response = await fetch(`${VENICE_BASE}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
-      console.log(`[Chat] Venice responded with status: ${response.status}`);
-    } catch (fetchErr) {
-      console.error('[Chat] Fetch error:', fetchErr.message);
-      res.write(`data: ${JSON.stringify({ type: 'error', error: `Fetch failed: ${fetchErr.message}` })}\n\n`);
-      res.end();
-      return;
-    }
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[Chat] Error ${response.status}:`, errText);
-      res.write(`data: ${JSON.stringify({ type: 'error', error: `Chat failed: ${response.status} - ${errText.slice(0, 100)}` })}\n\n`);
-      res.end();
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
     let sseBuffer = '';
     let sentenceBuffer = '';
     let sentenceIndex = 0;
     let insideThinking = false;
+    let tokenCount = 0;
+    let chunkCount = 0;
 
     // Strip <think>...</think> tags that some models emit
     function stripThinking(text) {
-      // Remove complete <think>...</think> blocks
       text = text.replace(/<think>[\s\S]*?<\/think>/g, '');
-      // Track incomplete thinking blocks
       if (text.includes('<think>')) {
         insideThinking = true;
         text = text.replace(/<think>[\s\S]*/g, '');
@@ -171,98 +168,171 @@ app.post('/api/chat', async (req, res) => {
         .trim();
     }
 
-    let tokenCount = 0;
-    let chunkCount = 0;
-    console.log('[Chat] Starting to read stream...');
+    // Use native https for reliable streaming
+    const postData = JSON.stringify(requestBody);
+    const url = new URL(`${VENICE_BASE}/chat/completions`);
     
-    while (!aborted) {
-      const { done, value } = await reader.read();
-      if (done) {
-        console.log(`[Chat] Stream ended, chunks: ${chunkCount}, tokens sent: ${tokenCount}`);
-        break;
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname,
+      method: 'POST',
+      agent: agent,
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'Accept-Encoding': 'identity'
+      }
+    };
+
+    veniceReq = https.request(options, (veniceRes) => {
+      console.log(`[Chat] Venice responded with status: ${veniceRes.statusCode}`);
+      console.log(`[Chat] Response headers:`, veniceRes.headers);
+      
+      if (veniceRes.statusCode !== 200) {
+        let errBody = '';
+        veniceRes.on('data', chunk => errBody += chunk);
+        veniceRes.on('end', () => {
+          console.error(`[Chat] Error: ${errBody.slice(0, 200)}`);
+          res.write(`data: ${JSON.stringify({ type: 'error', error: `Chat failed: ${veniceRes.statusCode}` })}\n\n`);
+          clearInterval(pingInterval);
+          res.end();
+        });
+        return;
       }
 
-      chunkCount++;
-      const chunk = decoder.decode(value, { stream: true });
-      if (chunkCount <= 3) {
-        console.log(`[Chat] Chunk ${chunkCount} (${chunk.length} chars): ${chunk.slice(0, 200).replace(/\n/g, '\\n')}`);
+      // Handle compressed responses
+      let stream = veniceRes;
+      const encoding = veniceRes.headers['content-encoding'];
+      console.log(`[Chat] Content-Encoding: ${encoding || 'none'}`);
+      
+      if (encoding === 'gzip') {
+        stream = veniceRes.pipe(zlib.createGunzip());
+      } else if (encoding === 'br') {
+        stream = veniceRes.pipe(zlib.createBrotliDecompress());
+      } else if (encoding === 'deflate') {
+        stream = veniceRes.pipe(zlib.createInflate());
       }
-      sseBuffer += chunk;
-
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const payload = line.slice(6).trim();
-        if (payload === '[DONE]') {
-          console.log('[Chat] Received [DONE] marker');
-          continue;
+      
+      stream.setEncoding('utf8');
+      console.log('[Chat] Stream handlers being attached...');
+      
+      stream.on('data', (chunk) => {
+        console.log(`[Chat] Data event fired, aborted=${aborted}, chunk size=${chunk.length}`);
+        if (aborted) {
+          console.log('[Chat] Request was aborted, skipping chunk');
+          return;
         }
+        
+        chunkCount++;
+        console.log(`[Chat] Processing chunk #${chunkCount}`);
+        if (chunkCount <= 3) {
+          console.log(`[Chat] Content: ${chunk.slice(0, 150).replace(/\n/g, '\\n')}`);
+        }
+        sseBuffer += chunk;
 
-        try {
-          const parsed = JSON.parse(payload);
-          let content = parsed.choices?.[0]?.delta?.content;
-          if (!content) continue;
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() || '';
 
-          // Strip thinking tags (Venice should handle this with strip_thinking_response, but backup)
-          content = stripThinking(content);
-          if (!content) continue;
-
-          tokenCount++;
-          // Send each token immediately for live text display
-          if (!aborted) {
-            res.write(`data: ${JSON.stringify({ type: 'token', token: content })}\n\n`);
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === '[DONE]') {
+            console.log('[Chat] Received [DONE] marker');
+            continue;
           }
 
-          // Accumulate for sentence detection (for TTS)
-          sentenceBuffer += content;
+          try {
+            const parsed = JSON.parse(payload);
+            let content = parsed.choices?.[0]?.delta?.content;
+            if (!content) continue;
 
-          // Check for sentence boundaries
-          const regex = /([.!?])\s+/g;
-          let lastIndex = 0;
-          let match;
-          const sentences = [];
+            // Strip thinking tags (Venice should handle this with strip_thinking_response, but backup)
+            content = stripThinking(content);
+            if (!content) continue;
 
-          while ((match = regex.exec(sentenceBuffer)) !== null) {
-            const sentence = sentenceBuffer.slice(lastIndex, match.index + 1).trim();
-            if (sentence.length >= 10) {
-              sentences.push(sentence);
-              lastIndex = match.index + match[0].length;
+            tokenCount++;
+            // Send each token immediately for live text display
+            if (!aborted) {
+              res.write(`data: ${JSON.stringify({ type: 'token', token: content })}\n\n`);
             }
-          }
 
-          if (sentences.length > 0) {
-            sentenceBuffer = sentenceBuffer.slice(lastIndex);
-            for (const sentence of sentences) {
-              const cleaned = cleanText(sentence);
-              if (cleaned.length > 0 && !aborted) {
-                res.write(`data: ${JSON.stringify({ type: 'sentence', index: sentenceIndex, text: cleaned })}\n\n`);
-                sentenceIndex++;
+            // Accumulate for sentence detection (for TTS)
+            sentenceBuffer += content;
+
+            // Check for sentence boundaries
+            const regex = /([.!?])\s+/g;
+            let lastIndex = 0;
+            let match;
+            const sentences = [];
+
+            while ((match = regex.exec(sentenceBuffer)) !== null) {
+              const sentence = sentenceBuffer.slice(lastIndex, match.index + 1).trim();
+              if (sentence.length >= 10) {
+                sentences.push(sentence);
+                lastIndex = match.index + match[0].length;
               }
             }
+
+            if (sentences.length > 0) {
+              sentenceBuffer = sentenceBuffer.slice(lastIndex);
+              for (const sentence of sentences) {
+                const cleaned = cleanText(sentence);
+                if (cleaned.length > 0 && !aborted) {
+                  res.write(`data: ${JSON.stringify({ type: 'sentence', index: sentenceIndex, text: cleaned })}\n\n`);
+                  sentenceIndex++;
+                }
+              }
+            }
+          } catch (e) {
+            // Skip malformed chunks
           }
-        } catch (e) {
-          // Skip malformed chunks
         }
-      }
-    }
+      });
 
-    // Flush remaining text as final sentence
-    if (!aborted) {
-      const remaining = cleanText(sentenceBuffer);
-      if (remaining.length > 0) {
-        res.write(`data: ${JSON.stringify({ type: 'sentence', index: sentenceIndex, text: remaining })}\n\n`);
-        sentenceIndex++;
-      }
-      res.write(`data: ${JSON.stringify({ type: 'done', sentenceCount: sentenceIndex })}\n\n`);
-    }
+      stream.on('end', () => {
+        console.log(`[Chat] Stream finished, chunks: ${chunkCount}, tokens sent: ${tokenCount}`);
+        
+        // Flush remaining text as final sentence
+        if (!aborted) {
+          const remaining = cleanText(sentenceBuffer);
+          if (remaining.length > 0) {
+            res.write(`data: ${JSON.stringify({ type: 'sentence', index: sentenceIndex, text: remaining })}\n\n`);
+            sentenceIndex++;
+          }
+          res.write(`data: ${JSON.stringify({ type: 'done', sentenceCount: sentenceIndex })}\n\n`);
+        }
+        clearInterval(pingInterval);
+        res.end();
+      });
 
-    res.end();
+      stream.on('error', (err) => {
+        console.error('[Chat] Stream error:', err);
+        if (!aborted) {
+          res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+          clearInterval(pingInterval);
+          res.end();
+        }
+      });
+    });
+
+    veniceReq.on('error', (err) => {
+      console.error('[Chat] Request error:', err);
+      if (!aborted) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+        clearInterval(pingInterval);
+        res.end();
+      }
+    });
+
+    veniceReq.write(postData);
+    veniceReq.end();
+
   } catch (err) {
     console.error('Chat error:', err);
     if (!aborted) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+      clearInterval(pingInterval);
       res.end();
     }
   }

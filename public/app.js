@@ -295,6 +295,14 @@
 
   const API = {
     conversationHistory: [],
+    activeChatController: null,
+
+    cancelActiveChat() {
+      if (this.activeChatController) {
+        this.activeChatController.abort();
+        this.activeChatController = null;
+      }
+    },
 
     async transcribe(audioBlob) {
       const wavBlob = await WavEncoder.blobToWav(audioBlob);
@@ -319,53 +327,81 @@
         this.conversationHistory = this.conversationHistory.slice(-CONFIG.MAX_HISTORY);
       }
 
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          messages: this.conversationHistory,
-          model: Settings.model,
-        }),
-      });
+      this.cancelActiveChat();
+      const controller = new AbortController();
+      this.activeChatController = controller;
 
-      if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
       let fullResponse = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      const handleSSELine = (rawLine) => {
+        const line = rawLine.trim();
+        if (!line.startsWith('data:')) return;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') return;
 
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.type === 'error') throw new Error(data.error);
-            if (data.type === 'token') {
-              fullResponse += data.token;
-              if (onToken) onToken(data.token);
-            }
-            if (data.type === 'sentence' && onSentence) {
-              onSentence(data);
-            }
-            if (data.type === 'done' && onDone) {
-              onDone(data);
-            }
-          } catch (e) {
-            if (e.message && !e.message.includes('JSON')) throw e;
+        let data;
+        try {
+          data = JSON.parse(payload);
+        } catch (e) {
+          return;
+        }
+
+        if (data.type === 'error') throw new Error(data.error);
+        if (data.type === 'token') {
+          fullResponse += data.token;
+          if (onToken) onToken(data.token);
+        }
+        if (data.type === 'sentence' && onSentence) onSentence(data);
+        if (data.type === 'done' && onDone) onDone(data);
+      };
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: this.conversationHistory,
+            model: Settings.model,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
+
+        // Fallback for environments where streaming response bodies are not exposed.
+        if (!res.body || typeof res.body.getReader !== 'function') {
+          const text = await res.text();
+          text.split('\n').forEach(handleSSELine);
+        } else {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            lines.forEach(handleSSELine);
+          }
+
+          buffer += decoder.decode();
+          if (buffer.trim().length > 0) {
+            buffer.split('\n').forEach(handleSSELine);
           }
         }
-      }
 
-      this.conversationHistory.push({ role: 'assistant', content: fullResponse });
-      return fullResponse;
+        this.conversationHistory.push({ role: 'assistant', content: fullResponse });
+        return fullResponse;
+      } catch (err) {
+        if (controller.signal.aborted) throw new Error('Chat stream interrupted');
+        throw err;
+      } finally {
+        if (this.activeChatController === controller) this.activeChatController = null;
+      }
     },
 
     async tts(text, index) {
@@ -662,6 +698,8 @@
     ttsEnabled: false,
     playbackContext: null,
     currentQueue: null,
+    pipelineBusy: false,
+    interactionVersion: 0,
 
     async init() {
       TranscriptUI.init();
@@ -762,15 +800,11 @@
     },
 
     handlePressStart() {
+      if (this.pipelineBusy) return;
       if (this.playbackContext.state === 'suspended') this.playbackContext.resume();
       if (AudioCapture.audioContext.state === 'suspended') AudioCapture.audioContext.resume();
 
-      if (StateMachine.current === State.SPEAKING) {
-        if (this.currentQueue) this.currentQueue.clear();
-        this.startListening();
-        return;
-      }
-      if (StateMachine.current === State.IDLE || StateMachine.current === State.STREAMING) {
+      if (StateMachine.current === State.IDLE) {
         this.startListening();
       }
     },
@@ -795,6 +829,7 @@
     },
 
     startListening() {
+      this.interactionVersion++;
       VAD.stop();
       AudioCapture.startRecording();
       StateMachine.transition(State.LISTENING);
@@ -802,17 +837,21 @@
     },
 
     async stopListeningAndProcess() {
-      StateMachine.transition(State.PROCESSING);
-      OrbVisualizer.setState('processing');
-      OrbVisualizer.setEnergy(0.3);
-
-      const audioBlob = await AudioCapture.stopRecording();
-      if (!audioBlob) { this.returnToIdle(); return; }
+      if (this.pipelineBusy) return;
+      this.pipelineBusy = true;
+      const runVersion = this.interactionVersion;
 
       try {
+        StateMachine.transition(State.PROCESSING);
+        OrbVisualizer.setState('processing');
+        OrbVisualizer.setEnergy(0.3);
+
+        const audioBlob = await AudioCapture.stopRecording();
+        if (!audioBlob) return;
+
         // Step 1: Transcribe
         const { text } = await API.transcribe(audioBlob);
-        if (!text || text.trim().length === 0) { this.returnToIdle(); return; }
+        if (!text || text.trim().length === 0) return;
         TranscriptUI.addEntry('user', text);
 
         // Step 2: Stream chat response
@@ -872,10 +911,11 @@
         console.error('Pipeline error:', err);
         TranscriptUI.endStreaming();
         TranscriptUI.addEntry('assistant', 'Error: ' + err.message);
+      } finally {
+        this.currentQueue = null;
+        this.pipelineBusy = false;
+        if (runVersion === this.interactionVersion) this.returnToIdle();
       }
-
-      this.currentQueue = null;
-      this.returnToIdle();
     },
 
     returnToIdle() {
