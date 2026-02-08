@@ -73,10 +73,14 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 // ─── ROUTE 2: CHAT (Streaming SSE - tokens + sentence boundaries) ────────────
 
 app.post('/api/chat', async (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  // SSE headers - important for Railway and other proxies
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  // Disable compression which can cause buffering
+  res.setHeader('Content-Encoding', 'identity');
   res.flushHeaders();
 
   let aborted = false;
@@ -177,7 +181,7 @@ app.post('/api/chat', async (req, res) => {
           let content = parsed.choices?.[0]?.delta?.content;
           if (!content) continue;
 
-          // Strip thinking tags
+          // Strip thinking tags (Venice should handle this with strip_thinking_response, but backup)
           content = stripThinking(content);
           if (!content) continue;
 
