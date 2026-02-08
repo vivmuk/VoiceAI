@@ -50,6 +50,43 @@
       </div>
     </section>
 
+    <!-- ═══ SETTINGS PANEL ═══ -->
+    <div class="settings-panel" id="settings-panel">
+      <div class="settings-header">
+        <span>CONFIGURATION</span>
+        <button class="settings-close" id="settings-close">×</button>
+      </div>
+      <div class="settings-group">
+        <label for="model-select">AI MODEL</label>
+        <select id="model-select" class="settings-select">
+          <option value="grok-41-fast">Grok 4.1 Fast</option>
+          <option value="qwen3-4b">Venice Small (Fastest)</option>
+          <option value="zai-org-glm-4.7-flash">GLM 4.7 Flash</option>
+          <option value="zai-org-glm-4.7">GLM 4.7 (Most Intelligent)</option>
+          <option value="llama-3.3-70b">Llama 3.3 70B</option>
+          <option value="deepseek-v3.2">DeepSeek v3.2</option>
+          <option value="mistral-31-24b">Mistral 31 24B</option>
+          <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+          <option value="claude-sonnet-45">Claude Sonnet 4.5</option>
+          <option value="venice-uncensored">Venice Uncensored</option>
+        </select>
+      </div>
+      <div class="settings-group">
+        <label for="voice-select">TTS VOICE</label>
+        <select id="voice-select" class="settings-select">
+          <option value="am_adam">Adam (Male)</option>
+          <option value="af_bella">Bella (Female)</option>
+          <option value="af_nicole">Nicole (Female)</option>
+          <option value="am_michael">Michael (Male)</option>
+          <option value="bf_emma">Emma (British Female)</option>
+          <option value="bm_george">George (British Male)</option>
+        </select>
+      </div>
+      <div class="settings-info" id="model-info">
+        Select a model to see details
+      </div>
+    </div>
+
     <!-- ═══ BOTTOM CONTROL BAR ═══ -->
     <footer class="hud-footer">
       <button class="control-btn" id="listen-btn" aria-label="Push to talk">
@@ -62,6 +99,9 @@
         <span class="btn-label" id="btn-label">HOLD TO SPEAK</span>
       </button>
       <div class="audio-level" id="audio-level-bar"></div>
+      <button class="control-btn small" id="settings-btn" aria-label="Settings">
+        ⚙
+      </button>
       <button class="control-btn small" id="tts-toggle" aria-label="Toggle text-to-speech">
         TTS
       </button>

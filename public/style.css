@@ -520,6 +520,113 @@ body {
   }
 }
 
+/* ─── SETTINGS PANEL ────────────────────────────────────────────────────────── */
+.settings-panel {
+  position: absolute;
+  bottom: 80px;
+  right: var(--hud-padding);
+  width: 280px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  display: none;
+  animation: slide-up 0.25s ease;
+}
+
+.settings-panel.open {
+  display: block;
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  letter-spacing: 3px;
+  color: var(--cyan);
+}
+
+.settings-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 6px;
+  transition: color var(--transition);
+}
+
+.settings-close:hover {
+  color: var(--cyan);
+}
+
+.settings-group {
+  margin-bottom: 14px;
+}
+
+.settings-group label {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.55rem;
+  letter-spacing: 2px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.settings-select {
+  width: 100%;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  cursor: pointer;
+  outline: none;
+  transition: all var(--transition);
+}
+
+.settings-select:hover,
+.settings-select:focus {
+  border-color: var(--cyan-mid);
+  box-shadow: 0 0 8px var(--cyan-glow-soft);
+}
+
+.settings-select option {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 8px;
+}
+
+.settings-info {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  padding: 10px;
+  background: rgba(0, 240, 255, 0.03);
+  border-radius: var(--radius);
+  border-left: 2px solid var(--cyan-dim);
+  line-height: 1.5;
+}
+
 /* ─── UTILITY: hide during init ────────────────────────────────────────────── */
 .hidden {
   display: none !important;

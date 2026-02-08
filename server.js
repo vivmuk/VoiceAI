@@ -92,7 +92,8 @@ app.post('/api/chat', async (req, res) => {
       ...(req.body.messages || [])
     ];
 
-    const chatModel = process.env.CHAT_MODEL || 'qwen3-4b';
+    // Use model from request, fall back to env var, then default
+    const chatModel = req.body.model || process.env.CHAT_MODEL || 'qwen3-4b';
 
     const requestBody = {
       model: chatModel,
@@ -271,10 +272,13 @@ app.post('/api/chat', async (req, res) => {
 
 app.post('/api/tts', async (req, res) => {
   try {
-    const { text, index } = req.body;
+    const { text, index, voice } = req.body;
     if (!text || text.trim().length === 0) {
       return res.status(400).json({ error: 'No text provided' });
     }
+
+    // Use voice from request, fall back to env var, then default
+    const ttsVoice = voice || process.env.TTS_VOICE || 'am_adam';
 
     const response = await fetch(`${VENICE_BASE}/audio/speech`, {
       method: 'POST',
@@ -285,7 +289,7 @@ app.post('/api/tts', async (req, res) => {
       body: JSON.stringify({
         model: 'tts-kokoro',
         input: text,
-        voice: process.env.TTS_VOICE || 'am_adam',
+        voice: ttsVoice,
         response_format: 'mp3',
         speed: 1.05
       })

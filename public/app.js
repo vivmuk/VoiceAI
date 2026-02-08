@@ -17,6 +17,72 @@
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // SETTINGS MANAGER
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const Settings = {
+    model: 'grok-41-fast',
+    voice: 'am_adam',
+
+    MODEL_INFO: {
+      'grok-41-fast': 'xAI Grok 4.1 - Best for agentic tasks, vision support',
+      'qwen3-4b': 'Venice Small - Fastest, lowest latency',
+      'zai-org-glm-4.7-flash': 'GLM 4.7 Flash - Fast with good reasoning',
+      'zai-org-glm-4.7': 'GLM 4.7 - Most intelligent, 198K context',
+      'llama-3.3-70b': 'Meta Llama 3.3 70B - Great all-rounder',
+      'deepseek-v3.2': 'DeepSeek v3.2 - Strong reasoning',
+      'mistral-31-24b': 'Mistral 31 24B - Fast and capable',
+      'gemini-3-flash-preview': 'Google Gemini 3 Flash - Multimodal',
+      'claude-sonnet-45': 'Anthropic Claude Sonnet 4.5 - High quality',
+      'venice-uncensored': 'Venice Uncensored - Maximum creative freedom',
+    },
+
+    init() {
+      // Load saved settings
+      const saved = localStorage.getItem('drishti-settings');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          this.model = parsed.model || this.model;
+          this.voice = parsed.voice || this.voice;
+        } catch (e) {}
+      }
+
+      // Apply to UI
+      const modelSelect = document.getElementById('model-select');
+      const voiceSelect = document.getElementById('voice-select');
+      if (modelSelect) modelSelect.value = this.model;
+      if (voiceSelect) voiceSelect.value = this.voice;
+      this.updateModelInfo();
+    },
+
+    save() {
+      localStorage.setItem('drishti-settings', JSON.stringify({
+        model: this.model,
+        voice: this.voice,
+      }));
+    },
+
+    setModel(model) {
+      this.model = model;
+      this.save();
+      this.updateModelInfo();
+    },
+
+    setVoice(voice) {
+      this.voice = voice;
+      this.save();
+    },
+
+    updateModelInfo() {
+      const info = document.getElementById('model-info');
+      if (info) {
+        info.textContent = this.MODEL_INFO[this.model] || 'Select a model';
+      }
+    },
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // STATE MACHINE
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -256,7 +322,10 @@
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: this.conversationHistory }),
+        body: JSON.stringify({ 
+          messages: this.conversationHistory,
+          model: Settings.model,
+        }),
       });
 
       if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
@@ -303,7 +372,7 @@
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, index }),
+        body: JSON.stringify({ text, index, voice: Settings.voice }),
       });
       if (!res.ok) throw new Error(`TTS failed: ${res.status}`);
       return res.arrayBuffer();
@@ -596,6 +665,7 @@
 
     async init() {
       TranscriptUI.init();
+      Settings.init();
 
       try {
         await AudioCapture.init();
@@ -658,6 +728,36 @@
         const ttsBtn = document.getElementById('tts-toggle');
         ttsBtn.classList.toggle('active', this.ttsEnabled);
         ttsBtn.textContent = this.ttsEnabled ? 'TTS ON' : 'TTS';
+      });
+
+      // Settings panel
+      const settingsPanel = document.getElementById('settings-panel');
+      const settingsBtn = document.getElementById('settings-btn');
+      const settingsClose = document.getElementById('settings-close');
+      const modelSelect = document.getElementById('model-select');
+      const voiceSelect = document.getElementById('voice-select');
+
+      settingsBtn.addEventListener('click', () => {
+        settingsPanel.classList.toggle('open');
+      });
+
+      settingsClose.addEventListener('click', () => {
+        settingsPanel.classList.remove('open');
+      });
+
+      modelSelect.addEventListener('change', (e) => {
+        Settings.setModel(e.target.value);
+      });
+
+      voiceSelect.addEventListener('change', (e) => {
+        Settings.setVoice(e.target.value);
+      });
+
+      // Close settings when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!settingsPanel.contains(e.target) && !settingsBtn.contains(e.target)) {
+          settingsPanel.classList.remove('open');
+        }
       });
     },
 
