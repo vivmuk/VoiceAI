@@ -136,7 +136,16 @@
       mic.className = 'indicator' + (state === State.LISTENING ? ' active' : '');
       ai.className = 'indicator' + (state === State.PROCESSING ? ' warning' : (state === State.STREAMING || state === State.SPEAKING) ? ' active' : '');
 
-      document.getElementById('listen-btn').classList.toggle('active', state === State.LISTENING);
+      const listenBtn = document.getElementById('listen-btn');
+      listenBtn.classList.toggle('active', state === State.LISTENING);
+
+      // Update mic ring animation
+      const micRing = document.getElementById('mic-ring');
+      if (micRing) {
+        micRing.className = 'mic-ring';
+        if (state === State.LISTENING) micRing.classList.add('listening');
+        else if (state === State.PROCESSING) micRing.classList.add('processing');
+      }
     },
   };
 
@@ -283,8 +292,6 @@
     monitor() {
       if (!this.enabled) return;
       const rms = AudioCapture.getRMSLevel();
-      const levelPct = Math.min(100, rms * 3500);
-      document.getElementById('audio-level-bar').style.setProperty('--level', levelPct + '%');
       OrbVisualizer.setEnergy(rms * 12);
 
       if (rms > CONFIG.SPEECH_THRESHOLD) {
@@ -707,7 +714,6 @@
   // ═══════════════════════════════════════════════════════════════════════════
 
   const Drishti = {
-    vadMode: false,  // default to PTT for reliability
     ttsEnabled: false,
     playbackContext: null,
     currentQueue: null,
@@ -728,9 +734,7 @@
         document.getElementById('net-status').classList.add('active');
         StateMachine.transition(State.IDLE);
 
-        // Default to PTT mode
         document.getElementById('btn-label').textContent = 'HOLD TO SPEAK';
-        document.getElementById('mode-toggle').textContent = 'PTT';
       } catch (err) {
         console.error('Drishti init failed:', err);
         document.getElementById('state-label').textContent = 'MIC ERROR';
@@ -747,7 +751,7 @@
       btn.addEventListener('mousedown', (e) => { e.preventDefault(); this.handlePressStart(); });
       btn.addEventListener('mouseup', (e) => { e.preventDefault(); this.handlePressEnd(); });
       btn.addEventListener('mouseleave', () => {
-        if (StateMachine.current === State.LISTENING && !this.vadMode) this.handlePressEnd();
+        if (StateMachine.current === State.LISTENING) this.handlePressEnd();
       });
       btn.addEventListener('touchstart', (e) => { e.preventDefault(); this.handlePressStart(); });
       btn.addEventListener('touchend', (e) => { e.preventDefault(); this.handlePressEnd(); });
@@ -763,22 +767,11 @@
         if (e.code === 'Space') { e.preventDefault(); spaceDown = false; this.handlePressEnd(); }
       });
 
-      // Mode toggle (VAD/PTT)
-      document.getElementById('mode-toggle').addEventListener('click', () => {
-        this.vadMode = !this.vadMode;
-        const toggle = document.getElementById('mode-toggle');
-        toggle.textContent = this.vadMode ? 'VAD' : 'PTT';
-        toggle.classList.toggle('active', this.vadMode);
-        document.getElementById('btn-label').textContent = this.vadMode ? 'VOICE ACTIVE' : 'HOLD TO SPEAK';
-        if (this.vadMode) this.startVADMode(); else VAD.stop();
-      });
-
       // TTS toggle
       document.getElementById('tts-toggle').addEventListener('click', () => {
         this.ttsEnabled = !this.ttsEnabled;
         const ttsBtn = document.getElementById('tts-toggle');
         ttsBtn.classList.toggle('active', this.ttsEnabled);
-        ttsBtn.textContent = this.ttsEnabled ? 'TTS ON' : 'TTS';
       });
 
       // Settings panel
@@ -830,22 +823,7 @@
     },
 
     handlePressEnd() {
-      if (StateMachine.current === State.LISTENING && !this.vadMode) this.stopListeningAndProcess();
-    },
-
-    startVADMode() {
-      if (StateMachine.current !== State.IDLE) return;
-      VAD.start({
-        onSpeechStart: () => {
-          if (StateMachine.current === State.IDLE) {
-            if (this.playbackContext.state === 'suspended') this.playbackContext.resume();
-            this.startListening();
-          }
-        },
-        onSpeechEnd: () => {
-          if (StateMachine.current === State.LISTENING) this.stopListeningAndProcess();
-        },
-      });
+      if (StateMachine.current === State.LISTENING) this.stopListeningAndProcess();
     },
 
     startListening() {
@@ -942,7 +920,6 @@
       StateMachine.transition(State.IDLE);
       OrbVisualizer.setState('idle');
       OrbVisualizer.setEnergy(0);
-      if (this.vadMode) this.startVADMode();
     },
 
     startClock() {

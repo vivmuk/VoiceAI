@@ -97,24 +97,32 @@
 
     <!-- ═══ BOTTOM CONTROL BAR ═══ -->
     <footer class="hud-footer">
-      <button class="control-btn primary" id="listen-btn" aria-label="Push to talk">
-        <svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          <line x1="12" y1="19" x2="12" y2="23"/>
-          <line x1="8" y1="23" x2="16" y2="23"/>
+      <button class="control-btn-side" id="settings-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
         </svg>
-        <span class="btn-label" id="btn-label">HOLD TO SPEAK</span>
+        <span class="btn-side-label">SETTINGS</span>
       </button>
-      <div class="audio-level" id="audio-level-bar"></div>
-      <button class="control-btn small" id="settings-btn" aria-label="Settings">
-        ⚙
-      </button>
-      <button class="control-btn small" id="tts-toggle" aria-label="Toggle text-to-speech">
-        TTS
-      </button>
-      <button class="control-btn small" id="mode-toggle" aria-label="Toggle interaction mode">
-        PTT
+      <div class="mic-btn-wrapper">
+        <div class="mic-ring" id="mic-ring"></div>
+        <button class="mic-btn" id="listen-btn" aria-label="Hold to speak">
+          <svg class="mic-icon" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+        <span class="mic-label" id="btn-label">HOLD TO SPEAK</span>
+      </div>
+      <button class="control-btn-side" id="tts-toggle" aria-label="Toggle text-to-speech">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+        </svg>
+        <span class="btn-side-label">TTS</span>
       </button>
     </footer>
 
