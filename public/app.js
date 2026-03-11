@@ -21,25 +21,13 @@
   // ═══════════════════════════════════════════════════════════════════════════
 
   const Settings = {
-    model: 'grok-41-fast',
+    model: 'mercury-2',
     voice: 'am_adam',
     webSearch: true,
     ttsSpeed: 1,
 
-    MODEL_INFO: {
-      'grok-41-fast': 'xAI Grok 4.1 - Best for agentic tasks, vision support',
-      'qwen3-4b': 'Venice Small - Fastest, lowest latency',
-      'qwen3-next-80b': 'Qwen 3 Next 80B - Advanced reasoning',
-      'zai-org-glm-4.7-flash': 'GLM 4.7 Flash - Fast with good reasoning',
-      'zai-org-glm-4.7': 'GLM 4.7 - Most intelligent, 198K context',
-      'llama-3.3-70b': 'Meta Llama 3.3 70B - Great all-rounder',
-      'deepseek-v3.2': 'DeepSeek v3.2 - Strong reasoning',
-      'mistral-31-24b': 'Mistral 31 24B - Fast and capable',
-      'gemini-3-flash-preview': 'Google Gemini 3 Flash - Multimodal preview',
-      'kimi-k2-5': 'Kimi K2.5 - Moonshot AI reasoning model',
-      'claude-sonnet-45': 'Anthropic Claude Sonnet 4.5 - High quality',
-      'venice-uncensored': 'Venice Uncensored - Maximum creative freedom',
-    },
+    // Populated dynamically from /api/models; used as fallback descriptions
+    MODEL_INFO: {},
 
     init() {
       // Load saved settings
@@ -54,14 +42,50 @@
         } catch (e) {}
       }
 
-      // Apply to UI
-      const modelSelect = document.getElementById('model-select');
+      // Apply non-model UI immediately
       const voiceSelect = document.getElementById('voice-select');
       const webSearchToggle = document.getElementById('web-search-toggle');
-      if (modelSelect) modelSelect.value = this.model;
       if (voiceSelect) voiceSelect.value = this.voice;
       if (webSearchToggle) webSearchToggle.checked = this.webSearch;
       this.updateSpeedUI();
+
+      // Fetch text models from API and populate dropdown
+      this.loadModels();
+    },
+
+    async loadModels() {
+      const modelSelect = document.getElementById('model-select');
+      try {
+        const res = await fetch('/api/models');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const models = data.data || data.models || [];
+
+        if (modelSelect && models.length > 0) {
+          modelSelect.innerHTML = '';
+          models.forEach((m) => {
+            const id = m.id || m.name;
+            const label = m.name || m.id || id;
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = label;
+            modelSelect.appendChild(opt);
+            // Store description for model info panel
+            this.MODEL_INFO[id] = m.description || m.model_spec?.description || label;
+          });
+
+          // Select saved/default model; fall back to first available
+          const target = this.model;
+          const exists = models.some((m) => (m.id || m.name) === target);
+          modelSelect.value = exists ? target : (models[0].id || models[0].name);
+          if (!exists) this.model = modelSelect.value;
+        }
+      } catch (err) {
+        console.error('Failed to load models:', err);
+        if (modelSelect) {
+          modelSelect.innerHTML = `<option value="${this.model}">${this.model} (offline)</option>`;
+        }
+      }
       this.updateModelInfo();
     },
 
