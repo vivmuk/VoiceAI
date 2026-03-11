@@ -118,7 +118,7 @@ app.post('/api/chat', async (req, res) => {
     ];
 
     // Use model from request, fall back to env var, then default
-    const chatModel = req.body.model || process.env.CHAT_MODEL || 'qwen3-4b';
+    const chatModel = req.body.model || process.env.CHAT_MODEL || 'mercury-2';
 
     const requestBody = {
       model: chatModel,
@@ -340,7 +340,27 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// ─── ROUTE 3: TTS (Text-to-Speech) ───────────────────────────────────────────
+// ─── ROUTE 3: MODELS (list text models) ──────────────────────────────────────
+
+app.get('/api/models', async (req, res) => {
+  try {
+    const response = await fetch(`${VENICE_BASE}/models?type=text`, {
+      headers: { 'Authorization': `Bearer ${API_KEY}` }
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`Models error ${response.status}:`, errText);
+      return res.status(response.status).json({ error: `Failed to fetch models: ${response.status}` });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('Models error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── ROUTE 4: TTS (Text-to-Speech) ───────────────────────────────────────────
 
 app.post('/api/tts', async (req, res) => {
   try {
